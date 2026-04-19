@@ -10,8 +10,8 @@ import {
   ShieldAlert, CreditCard, Activity, ArrowUpRight, TrendingUp, TrendingDown,
   Users, AlertTriangle, Zap, ChevronRight, ChevronDown, ChevronUp,
   Search, Bell, Download, RefreshCw, X, Clock, CheckCircle2,
-  MoreHorizontal, ArrowUpDown, LayoutGrid, DollarSign, Layers,
-  BarChart2, Bookmark, SlidersHorizontal, Star, Command, Globe,
+  MoreHorizontal, ArrowUpDown, LayoutGrid, DollarSign,
+  Bookmark, SlidersHorizontal, Star, Globe,
   Eye, Filter, Sparkles, FileEdit, Copy,
 } from 'lucide-react';
 
@@ -573,7 +573,7 @@ interface RiskTableProps {
   onAction?: (action: 'view' | 'escalate' | 'actions', p: DashboardData['important_projects'][0]) => void;
 }
 
-const RiskTable = ({ items, sortKey, sortDir, onSort, expandedRows, onToggleRow, compact = false, onAction }: RiskTableProps) => {
+const RiskTable = ({ items, sortKey, onSort, expandedRows, onToggleRow, compact = false, onAction }: RiskTableProps) => {
   const SortHeader = ({ k, label }: { k: SortKey; label: string }) => (
     <button
       onClick={() => onSort(k)}
