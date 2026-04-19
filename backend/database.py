@@ -1,8 +1,8 @@
 from sqlmodel import create_engine, Session, SQLModel
 import os
 
-_db_url = os.getenv("DATABASE_URL", "postgresql+psycopg:///steering_db")
-DATABASE_URL = _db_url.replace("postgresql://", "postgresql+psycopg://", 1) if _db_url.startswith("postgresql://") else _db_url
+_db_url = os.getenv("DATABASE_URL", "postgresql+pg8000:///steering_db")
+DATABASE_URL = _db_url.replace("postgresql://", "postgresql+pg8000://", 1).replace("postgres://", "postgresql+pg8000://", 1) if ("postgresql://" in _db_url or "postgres://" in _db_url) else _db_url
 
 engine = create_engine(DATABASE_URL)
 
