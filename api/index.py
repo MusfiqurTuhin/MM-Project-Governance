@@ -1,281 +1,324 @@
-from fastapi import FastAPI, Depends, HTTPException, status
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.security import OAuth2PasswordRequestForm
-from sqlmodel import Session, select
-from typing import List
+from flask import Flask, request, jsonify, g
+from functools import wraps
 from datetime import date, timedelta
-from pydantic import BaseModel
 
-from database import get_session, init_db
+from database import engine, SessionLocal, Base
 from models import (
-    Project, Client, MeetingUpdate, Employee, Invoice,
-    RAGStatus, BlockerType, InvoiceStatus, User, UserRole,
+    User, UserRole, Client, Employee, Project,
+    MeetingUpdate, Invoice, RAGStatus, BlockerType, InvoiceStatus,
 )
 from auth import (
-    verify_password, create_access_token, hash_password,
-    get_current_user, require_admin, require_super_admin,
-    seed_default_users,
+    hash_password, verify_password, create_access_token,
+    decode_token, seed_default_users,
 )
 
-app = FastAPI(title="MM Project Governance API")
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+app = Flask(__name__)
 
 
-@app.on_event("startup")
-def on_startup():
+def init_db():
+    Base.metadata.create_all(engine)
+    with SessionLocal() as s:
+        seed_default_users(s)
+
+
+with app.app_context():
     init_db()
-    from database import engine
-    with Session(engine) as session:
-        seed_default_users(session)
 
 
-class TokenResponse(BaseModel):
-    access_token: str
-    token_type: str
-    role: str
-    username: str
+# ── helpers ──────────────────────────────────────────────────────────────────
+
+def get_db():
+    if "db" not in g:
+        g.db = SessionLocal()
+    return g.db
 
 
-@app.post("/api/v1/auth/login", response_model=TokenResponse)
-def login(form: OAuth2PasswordRequestForm = Depends(), session: Session = Depends(get_session)):
-    user = session.exec(select(User).where(User.username == form.username)).first()
-    if not user or not verify_password(form.password, user.hashed_password):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
+@app.teardown_appcontext
+def close_db(_exc=None):
+    db = g.pop("db", None)
+    if db:
+        db.close()
+
+
+def require_auth(f):
+    @wraps(f)
+    def wrapper(*args, **kwargs):
+        token = request.headers.get("Authorization", "").removeprefix("Bearer ").strip()
+        payload = decode_token(token)
+        if not payload:
+            return jsonify({"detail": "Invalid or expired token"}), 401
+        db = get_db()
+        user = db.query(User).filter_by(username=payload.get("sub")).first()
+        if not user or not user.is_active:
+            return jsonify({"detail": "Invalid or expired token"}), 401
+        g.current_user = user
+        return f(*args, **kwargs)
+    return wrapper
+
+
+def require_super_admin(f):
+    @wraps(f)
+    @require_auth
+    def wrapper(*args, **kwargs):
+        if g.current_user.role != UserRole.SUPER_ADMIN:
+            return jsonify({"detail": "Only super admins can perform this action"}), 403
+        return f(*args, **kwargs)
+    return wrapper
+
+
+def row_to_dict(obj, exclude=None):
+    d = {c.name: getattr(obj, c.name) for c in obj.__table__.columns}
+    for k, v in d.items():
+        if isinstance(v, date):
+            d[k] = v.isoformat()
+        elif hasattr(v, "value"):
+            d[k] = v.value
+    if exclude:
+        for k in exclude:
+            d.pop(k, None)
+    return d
+
+
+# ── auth ─────────────────────────────────────────────────────────────────────
+
+@app.post("/api/v1/auth/login")
+def login():
+    username = request.form.get("username") or (request.json or {}).get("username")
+    password = request.form.get("password") or (request.json or {}).get("password")
+    db = get_db()
+    user = db.query(User).filter_by(username=username).first()
+    if not user or not verify_password(password, user.hashed_password):
+        return jsonify({"detail": "Invalid credentials"}), 401
     if not user.is_active:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account disabled")
-    token = create_access_token({"sub": user.username, "role": user.role})
-    return TokenResponse(access_token=token, token_type="bearer", role=user.role, username=user.username)
+        return jsonify({"detail": "Account disabled"}), 403
+    token = create_access_token({"sub": user.username, "role": user.role.value})
+    return jsonify({"access_token": token, "token_type": "bearer", "role": user.role.value, "username": user.username})
 
 
-class MeResponse(BaseModel):
-    id: int
-    username: str
-    email: str
-    role: str
-    is_active: bool
+@app.get("/api/v1/auth/me")
+@require_auth
+def get_me():
+    return jsonify(row_to_dict(g.current_user, exclude=["hashed_password"]))
 
 
-@app.get("/api/v1/auth/me", response_model=MeResponse)
-def get_me(current_user: User = Depends(get_current_user)):
-    return current_user
+# ── users ─────────────────────────────────────────────────────────────────────
+
+@app.get("/api/v1/users")
+@require_super_admin
+def list_users():
+    db = get_db()
+    users = db.query(User).all()
+    return jsonify([row_to_dict(u, exclude=["hashed_password"]) for u in users])
 
 
-class CreateUserRequest(BaseModel):
-    username: str
-    email: str
-    password: str
-    role: UserRole = UserRole.ADMIN
-
-
-@app.get("/api/v1/users", dependencies=[Depends(require_super_admin)])
-def list_users(session: Session = Depends(get_session)):
-    users = session.exec(select(User)).all()
-    return [{"id": u.id, "username": u.username, "email": u.email, "role": u.role, "is_active": u.is_active} for u in users]
-
-
-@app.post("/api/v1/users", dependencies=[Depends(require_super_admin)])
-def create_user(body: CreateUserRequest, session: Session = Depends(get_session)):
-    if session.exec(select(User).where(User.username == body.username)).first():
-        raise HTTPException(status_code=400, detail="Username already exists")
+@app.post("/api/v1/users")
+@require_super_admin
+def create_user():
+    db = get_db()
+    body = request.json or {}
+    if db.query(User).filter_by(username=body["username"]).first():
+        return jsonify({"detail": "Username already exists"}), 400
     user = User(
-        username=body.username,
-        email=body.email,
-        hashed_password=hash_password(body.password),
-        role=body.role,
+        username=body["username"], email=body["email"],
+        hashed_password=hash_password(body["password"]),
+        role=UserRole(body.get("role", "admin")),
     )
-    session.add(user)
-    session.commit()
-    session.refresh(user)
-    return {"id": user.id, "username": user.username, "email": user.email, "role": user.role}
+    db.add(user); db.commit(); db.refresh(user)
+    return jsonify(row_to_dict(user, exclude=["hashed_password"])), 201
 
 
-@app.delete("/api/v1/users/{user_id}", dependencies=[Depends(require_super_admin)])
-def delete_user(user_id: int, session: Session = Depends(get_session)):
-    user = session.get(User, user_id)
+@app.delete("/api/v1/users/<int:user_id>")
+@require_super_admin
+def delete_user(user_id):
+    db = get_db()
+    user = db.get(User, user_id)
     if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-    session.delete(user)
-    session.commit()
-    return {"ok": True}
+        return jsonify({"detail": "Not found"}), 404
+    db.delete(user); db.commit()
+    return jsonify({"ok": True})
 
 
-@app.get("/api/v1/projects", response_model=List[Project])
-def get_projects(session: Session = Depends(get_session), _=Depends(require_admin)):
-    return session.exec(select(Project)).all()
+# ── read endpoints ────────────────────────────────────────────────────────────
+
+@app.get("/api/v1/projects")
+@require_auth
+def get_projects():
+    return jsonify([row_to_dict(p) for p in get_db().query(Project).all()])
 
 
-@app.get("/api/v1/employees", response_model=List[Employee])
-def get_employees(session: Session = Depends(get_session), _=Depends(require_admin)):
-    return session.exec(select(Employee)).all()
+@app.get("/api/v1/employees")
+@require_auth
+def get_employees():
+    return jsonify([row_to_dict(e) for e in get_db().query(Employee).all()])
 
 
-@app.get("/api/v1/clients", response_model=List[Client])
-def get_clients(session: Session = Depends(get_session), _=Depends(require_admin)):
-    return session.exec(select(Client)).all()
+@app.get("/api/v1/clients")
+@require_auth
+def get_clients():
+    return jsonify([row_to_dict(c) for c in get_db().query(Client).all()])
 
 
-@app.get("/api/v1/updates", dependencies=[Depends(require_admin)])
-def get_updates(session: Session = Depends(get_session)):
-    updates = session.exec(select(MeetingUpdate).order_by(MeetingUpdate.updated_at.desc())).all()
+@app.get("/api/v1/updates")
+@require_auth
+def get_updates():
+    db = get_db()
+    updates = db.query(MeetingUpdate).order_by(MeetingUpdate.updated_at.desc()).all()
     result = []
     for u in updates:
-        project = session.get(Project, u.project_id)
-        owner = session.get(Employee, u.action_owner_id)
-        result.append({
-            **u.model_dump(),
-            "project_name": project.name if project else "Unknown",
-            "owner_name": owner.name if owner else "Unknown",
-        })
-    return result
+        d = row_to_dict(u)
+        proj = db.get(Project, u.project_id)
+        owner = db.get(Employee, u.action_owner_id)
+        d["project_name"] = proj.name if proj else "Unknown"
+        d["owner_name"] = owner.name if owner else "Unknown"
+        result.append(d)
+    return jsonify(result)
 
 
-@app.get("/api/v1/dashboard", dependencies=[Depends(require_admin)])
-def get_dashboard(session: Session = Depends(get_session)):
+@app.get("/api/v1/dashboard")
+@require_auth
+def get_dashboard():
+    db = get_db()
     today = date.today()
-    projects = session.exec(select(Project)).all()
+    projects = db.query(Project).all()
 
-    critical_watchlist = []
-    resource_heatmap = {}
-    revenue_by_currency = {}
-    admin_actions = []
-    team_details: dict = {}
+    critical_watchlist, resource_heatmap, revenue_by_currency, admin_actions, team_details = [], {}, {}, [], {}
 
-    employees = session.exec(select(Employee)).all()
-    for emp in employees:
+    for emp in db.query(Employee).all():
         resource_heatmap[emp.name] = 0
 
     for project in projects:
-        latest_update = session.exec(
-            select(MeetingUpdate)
-            .where(MeetingUpdate.project_id == project.id)
-            .order_by(MeetingUpdate.updated_at.desc(), MeetingUpdate.id.desc())
-        ).first()
-
-        if not latest_update:
+        latest = (db.query(MeetingUpdate)
+                  .filter_by(project_id=project.id)
+                  .order_by(MeetingUpdate.updated_at.desc(), MeetingUpdate.id.desc())
+                  .first())
+        if not latest:
             continue
 
-        is_overdue = latest_update.current_estimated_deadline > project.original_deadline
-        if latest_update.rag_status == RAGStatus.RED or is_overdue:
-            score = 0
-            if latest_update.rag_status == RAGStatus.RED:
-                score += 10
-            elif latest_update.rag_status == RAGStatus.AMBER:
-                score += 5
+        is_overdue = latest.current_estimated_deadline > project.original_deadline
+        if latest.rag_status == RAGStatus.RED or is_overdue:
+            score = 10 if latest.rag_status == RAGStatus.RED else (5 if latest.rag_status == RAGStatus.AMBER else 0)
             if is_overdue:
-                score += max(0, (latest_update.current_estimated_deadline - project.original_deadline).days)
-            score += int(latest_update.next_invoice_amount / 500)
+                score += max(0, (latest.current_estimated_deadline - project.original_deadline).days)
+            score += int(latest.next_invoice_amount / 500)
             critical_watchlist.append({
-                "project_id": project.id,
-                "name": project.name,
-                "rag_status": latest_update.rag_status,
-                "score": score,
-                "deadline": latest_update.current_estimated_deadline,
+                "project_id": project.id, "name": project.name,
+                "rag_status": latest.rag_status.value, "score": score,
+                "deadline": latest.current_estimated_deadline.isoformat(),
             })
 
-        if latest_update.rag_status in [RAGStatus.RED, RAGStatus.AMBER]:
-            owner = session.get(Employee, latest_update.action_owner_id)
+        if latest.rag_status in [RAGStatus.RED, RAGStatus.AMBER]:
+            owner = db.get(Employee, latest.action_owner_id)
             if owner:
-                resource_heatmap[owner.name] += 1
+                resource_heatmap[owner.name] = resource_heatmap.get(owner.name, 0) + 1
                 team_details.setdefault(owner.name, []).append({
-                    "project": project.name,
-                    "rag_status": latest_update.rag_status,
-                    "deadline": str(latest_update.current_estimated_deadline),
-                    "blocker": latest_update.blocker_type,
-                    "notes": latest_update.notes,
+                    "project": project.name, "rag_status": latest.rag_status.value,
+                    "deadline": str(latest.current_estimated_deadline),
+                    "blocker": latest.blocker_type.value, "notes": latest.notes,
                 })
 
         curr = project.currency or "USD"
         revenue_by_currency.setdefault(curr, 0.0)
-        if latest_update.current_estimated_deadline <= (today + timedelta(days=14)):
-            revenue_by_currency[curr] += latest_update.next_invoice_amount
-            for inv in session.exec(
-                select(Invoice).where(Invoice.project_id == project.id).where(Invoice.status != InvoiceStatus.PAID)
-            ).all():
+        if latest.current_estimated_deadline <= (today + timedelta(days=14)):
+            revenue_by_currency[curr] += latest.next_invoice_amount
+            for inv in db.query(Invoice).filter(Invoice.project_id == project.id, Invoice.status != InvoiceStatus.PAID).all():
                 revenue_by_currency[curr] += inv.amount
 
-        if latest_update.blocker_type in [BlockerType.BUREAUCRACY, BlockerType.CLIENT]:
-            admin_actions.append({
-                "project": project.name,
-                "notes": latest_update.notes,
-                "blocker": latest_update.blocker_type,
-            })
+        if latest.blocker_type in [BlockerType.BUREAUCRACY, BlockerType.CLIENT]:
+            admin_actions.append({"project": project.name, "notes": latest.notes, "blocker": latest.blocker_type.value})
 
     critical_watchlist.sort(key=lambda x: x["score"], reverse=True)
-    return {
-        "important_projects": critical_watchlist,
-        "team_workload": resource_heatmap,
-        "financial_summary": revenue_by_currency,
-        "needed_actions": admin_actions,
+    return jsonify({
+        "important_projects": critical_watchlist, "team_workload": resource_heatmap,
+        "financial_summary": revenue_by_currency, "needed_actions": admin_actions,
         "team_details": team_details,
-    }
+    })
 
 
-@app.post("/api/v1/projects", dependencies=[Depends(require_admin)])
-def create_project(project: Project, session: Session = Depends(get_session)):
-    session.add(project)
-    session.commit()
-    session.refresh(project)
-    return project
+# ── write endpoints ───────────────────────────────────────────────────────────
+
+@app.post("/api/v1/projects")
+@require_auth
+def create_project():
+    db = get_db()
+    b = request.json or {}
+    p = Project(name=b["name"], client_id=b["client_id"], manager_id=b["manager_id"],
+                budget=b["budget"], currency=b.get("currency", "USD"),
+                start_date=date.fromisoformat(b["start_date"]),
+                original_deadline=date.fromisoformat(b["original_deadline"]))
+    db.add(p); db.commit(); db.refresh(p)
+    return jsonify(row_to_dict(p)), 201
 
 
-@app.post("/api/v1/clients", dependencies=[Depends(require_admin)])
-def create_client(client: Client, session: Session = Depends(get_session)):
-    session.add(client)
-    session.commit()
-    session.refresh(client)
-    return client
+@app.post("/api/v1/clients")
+@require_auth
+def create_client():
+    db = get_db()
+    b = request.json or {}
+    c = Client(name=b["name"], contact_email=b["contact_email"])
+    db.add(c); db.commit(); db.refresh(c)
+    return jsonify(row_to_dict(c)), 201
 
 
-@app.post("/api/v1/employees", dependencies=[Depends(require_admin)])
-def create_employee(employee: Employee, session: Session = Depends(get_session)):
-    session.add(employee)
-    session.commit()
-    session.refresh(employee)
-    return employee
+@app.post("/api/v1/employees")
+@require_auth
+def create_employee():
+    db = get_db()
+    b = request.json or {}
+    e = Employee(name=b["name"], roles=b["roles"])
+    db.add(e); db.commit(); db.refresh(e)
+    return jsonify(row_to_dict(e)), 201
 
 
-@app.post("/api/v1/updates", dependencies=[Depends(require_admin)])
-def create_update(update: MeetingUpdate, session: Session = Depends(get_session)):
-    if update.rag_status == RAGStatus.GREEN and update.blocker_type == BlockerType.BUREAUCRACY:
-        raise HTTPException(status_code=400, detail="Cannot have a Green status with a Bureaucracy blocker.")
-    session.add(update)
-    session.commit()
-    session.refresh(update)
-    return update
+@app.post("/api/v1/updates")
+@require_auth
+def create_update():
+    db = get_db()
+    b = request.json or {}
+    rag = RAGStatus(b["rag_status"])
+    blocker = BlockerType(b.get("blocker_type", "NONE"))
+    if rag == RAGStatus.GREEN and blocker == BlockerType.BUREAUCRACY:
+        return jsonify({"detail": "Cannot have Green status with Bureaucracy blocker"}), 400
+    u = MeetingUpdate(
+        project_id=b["project_id"], rag_status=rag, blocker_type=blocker,
+        current_estimated_deadline=date.fromisoformat(b["current_estimated_deadline"]),
+        action_owner_id=b["action_owner_id"],
+        next_invoice_amount=b.get("next_invoice_amount", 0.0),
+        notes=b.get("notes", ""),
+    )
+    db.add(u); db.commit(); db.refresh(u)
+    return jsonify(row_to_dict(u)), 201
 
 
-@app.delete("/api/v1/projects/{project_id}", dependencies=[Depends(require_super_admin)])
-def delete_project(project_id: int, session: Session = Depends(get_session)):
-    obj = session.get(Project, project_id)
+# ── delete endpoints ──────────────────────────────────────────────────────────
+
+@app.delete("/api/v1/projects/<int:pid>")
+@require_super_admin
+def delete_project(pid):
+    db = get_db()
+    obj = db.get(Project, pid)
     if not obj:
-        raise HTTPException(status_code=404, detail="Not found")
-    session.delete(obj)
-    session.commit()
-    return {"ok": True}
+        return jsonify({"detail": "Not found"}), 404
+    db.delete(obj); db.commit()
+    return jsonify({"ok": True})
 
 
-@app.delete("/api/v1/clients/{client_id}", dependencies=[Depends(require_super_admin)])
-def delete_client(client_id: int, session: Session = Depends(get_session)):
-    obj = session.get(Client, client_id)
+@app.delete("/api/v1/clients/<int:cid>")
+@require_super_admin
+def delete_client(cid):
+    db = get_db()
+    obj = db.get(Client, cid)
     if not obj:
-        raise HTTPException(status_code=404, detail="Not found")
-    session.delete(obj)
-    session.commit()
-    return {"ok": True}
+        return jsonify({"detail": "Not found"}), 404
+    db.delete(obj); db.commit()
+    return jsonify({"ok": True})
 
 
-@app.delete("/api/v1/employees/{employee_id}", dependencies=[Depends(require_super_admin)])
-def delete_employee(employee_id: int, session: Session = Depends(get_session)):
-    obj = session.get(Employee, employee_id)
+@app.delete("/api/v1/employees/<int:eid>")
+@require_super_admin
+def delete_employee(eid):
+    db = get_db()
+    obj = db.get(Employee, eid)
     if not obj:
-        raise HTTPException(status_code=404, detail="Not found")
-    session.delete(obj)
-    session.commit()
-    return {"ok": True}
+        return jsonify({"detail": "Not found"}), 404
+    db.delete(obj); db.commit()
+    return jsonify({"ok": True})

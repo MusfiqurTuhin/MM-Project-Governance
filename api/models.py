@@ -1,86 +1,87 @@
+import enum
 from datetime import date
-from enum import Enum
-from typing import List, Optional
-from sqlmodel import Field, Relationship, SQLModel
+from sqlalchemy import Column, Integer, String, Float, Boolean, Date, Enum, ForeignKey
+from database import Base
 
 
-class UserRole(str, Enum):
+class UserRole(str, enum.Enum):
     SUPER_ADMIN = "super_admin"
     ADMIN = "admin"
 
 
-class User(SQLModel, table=True):
-    id: Optional[int] = Field(default=None, primary_key=True)
-    username: str = Field(unique=True, index=True)
-    email: str = Field(unique=True)
-    hashed_password: str
-    role: UserRole = Field(default=UserRole.ADMIN)
-    is_active: bool = Field(default=True)
-
-class RAGStatus(str, Enum):
+class RAGStatus(str, enum.Enum):
     RED = "RED"
     AMBER = "AMBER"
     GREEN = "GREEN"
 
-class BlockerType(str, Enum):
+
+class BlockerType(str, enum.Enum):
     TECHNICAL = "TECHNICAL"
     BUREAUCRACY = "BUREAUCRACY"
     CLIENT = "CLIENT"
     RESOURCE = "RESOURCE"
     NONE = "NONE"
 
-class InvoiceStatus(str, Enum):
+
+class InvoiceStatus(str, enum.Enum):
     DRAFT = "DRAFT"
     SENT = "SENT"
     PAID = "PAID"
 
-class Client(SQLModel, table=True):
-    id: Optional[int] = Field(default=None, primary_key=True)
-    name: str
-    contact_email: str
-    projects: List["Project"] = Relationship(back_populates="client")
 
-class Employee(SQLModel, table=True):
-    id: Optional[int] = Field(default=None, primary_key=True)
-    name: str
-    roles: str  # Comma separated roles
-    updates: List["MeetingUpdate"] = Relationship(back_populates="action_owner")
-    managed_projects: List["Project"] = Relationship(back_populates="manager")
+class User(Base):
+    __tablename__ = "user"
+    id = Column(Integer, primary_key=True)
+    username = Column(String, unique=True, nullable=False, index=True)
+    email = Column(String, unique=True, nullable=False)
+    hashed_password = Column(String, nullable=False)
+    role = Column(Enum(UserRole), default=UserRole.ADMIN, nullable=False)
+    is_active = Column(Boolean, default=True, nullable=False)
 
-class Project(SQLModel, table=True):
-    id: Optional[int] = Field(default=None, primary_key=True)
-    name: str
-    client_id: int = Field(foreign_key="client.id")
-    manager_id: int = Field(foreign_key="employee.id")
-    budget: float
-    currency: str = Field(default="USD")
-    start_date: date
-    original_deadline: date
-    
-    client: Client = Relationship(back_populates="projects")
-    manager: Employee = Relationship(back_populates="managed_projects")
-    updates: List["MeetingUpdate"] = Relationship(back_populates="project")
-    invoices: List["Invoice"] = Relationship(back_populates="project")
 
-class MeetingUpdate(SQLModel, table=True):
-    id: Optional[int] = Field(default=None, primary_key=True)
-    project_id: int = Field(foreign_key="project.id")
-    updated_at: date = Field(default_factory=date.today)
-    rag_status: RAGStatus
-    current_estimated_deadline: date
-    blocker_type: BlockerType = Field(default=BlockerType.NONE)
-    action_owner_id: int = Field(foreign_key="employee.id")
-    next_invoice_amount: float = Field(default=0.0)
-    notes: str
-    
-    project: Project = Relationship(back_populates="updates")
-    action_owner: Employee = Relationship(back_populates="updates")
+class Client(Base):
+    __tablename__ = "client"
+    id = Column(Integer, primary_key=True)
+    name = Column(String, nullable=False)
+    contact_email = Column(String, nullable=False)
 
-class Invoice(SQLModel, table=True):
-    id: Optional[int] = Field(default=None, primary_key=True)
-    project_id: int = Field(foreign_key="project.id")
-    amount: float
-    status: InvoiceStatus
-    due_date: date
-    
-    project: Project = Relationship(back_populates="invoices")
+
+class Employee(Base):
+    __tablename__ = "employee"
+    id = Column(Integer, primary_key=True)
+    name = Column(String, nullable=False)
+    roles = Column(String, nullable=False)
+
+
+class Project(Base):
+    __tablename__ = "project"
+    id = Column(Integer, primary_key=True)
+    name = Column(String, nullable=False)
+    client_id = Column(Integer, ForeignKey("client.id"), nullable=False)
+    manager_id = Column(Integer, ForeignKey("employee.id"), nullable=False)
+    budget = Column(Float, nullable=False)
+    currency = Column(String, default="USD")
+    start_date = Column(Date, nullable=False)
+    original_deadline = Column(Date, nullable=False)
+
+
+class MeetingUpdate(Base):
+    __tablename__ = "meetingupdate"
+    id = Column(Integer, primary_key=True)
+    project_id = Column(Integer, ForeignKey("project.id"), nullable=False)
+    updated_at = Column(Date, default=date.today, nullable=False)
+    rag_status = Column(Enum(RAGStatus), nullable=False)
+    current_estimated_deadline = Column(Date, nullable=False)
+    blocker_type = Column(Enum(BlockerType), default=BlockerType.NONE)
+    action_owner_id = Column(Integer, ForeignKey("employee.id"), nullable=False)
+    next_invoice_amount = Column(Float, default=0.0)
+    notes = Column(String, nullable=False)
+
+
+class Invoice(Base):
+    __tablename__ = "invoice"
+    id = Column(Integer, primary_key=True)
+    project_id = Column(Integer, ForeignKey("project.id"), nullable=False)
+    amount = Column(Float, nullable=False)
+    status = Column(Enum(InvoiceStatus), nullable=False)
+    due_date = Column(Date, nullable=False)

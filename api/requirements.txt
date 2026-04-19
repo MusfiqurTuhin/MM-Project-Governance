@@ -1,6 +1,4 @@
-fastapi
-uvicorn
-sqlmodel
+flask
+sqlalchemy
 pg8000
 PyJWT
-python-multipart
