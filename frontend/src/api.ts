@@ -5,6 +5,19 @@ const api = axios.create({
   baseURL: import.meta.env.VITE_API_URL ?? '/api/v1',
 });
 
+// Auto-logout on expired/invalid token
+api.interceptors.response.use(
+  res => res,
+  err => {
+    if (err.response?.status === 401 && !err.config?.url?.includes('/auth/')) {
+      localStorage.removeItem('mm_auth');
+      delete api.defaults.headers.common['Authorization'];
+      window.location.reload();
+    }
+    return Promise.reject(err);
+  }
+);
+
 export const getProjects = () => api.get<Project[]>('/projects');
 export const getEmployees = () => api.get<Employee[]>('/employees');
 export const getClients = () => api.get<Client[]>('/clients');
