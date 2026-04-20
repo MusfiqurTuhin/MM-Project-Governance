@@ -188,8 +188,8 @@ const MasterData: React.FC = () => {
   return (
     <div className="space-y-8">
       {/* Tab Navigation */}
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div className="flex bg-slate-900/50 p-1.5 rounded-2xl border border-white/5">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        <div className="flex overflow-x-auto bg-slate-900/50 p-1.5 rounded-2xl border border-white/5 scrollbar-none">
           {[
             { id: 'PROJECTS', icon: Briefcase, label: 'Projects' },
             { id: 'EMPLOYEES', icon: Users, label: 'Employees' },
@@ -200,19 +200,20 @@ const MasterData: React.FC = () => {
               variant={activeTab === tab.id ? 'primary' : 'ghost'}
               icon={tab.icon}
               onClick={() => setActiveTab(tab.id as any)}
-              className="px-6 py-2.5"
+              className="px-4 sm:px-6 py-2.5 whitespace-nowrap"
             >
               {tab.label}
             </Button>
           ))}
         </div>
 
-        <Button 
+        <Button
           icon={Plus}
           onClick={() => {
             setFormData({});
             setShowModal(true);
           }}
+          className="w-full sm:w-auto justify-center"
         >
           Add New {activeTab === 'PROJECTS' ? 'Project' : activeTab === 'CLIENTS' ? 'Client' : 'Employee'}
         </Button>
@@ -225,8 +226,8 @@ const MasterData: React.FC = () => {
 
       {/* Add Entity Modal */}
       {showModal && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 backdrop-blur-sm bg-slate-950/60">
-          <div className="bg-slate-900 border border-white/10 w-full max-w-md rounded-3xl shadow-2xl animate-in zoom-in-95 duration-200 p-8">
+        <div className="fixed inset-0 z-[100] flex items-start sm:items-center justify-center p-4 sm:p-6 pt-10 sm:pt-0 backdrop-blur-sm bg-slate-950/60 overflow-y-auto">
+          <div className="bg-slate-900 border border-white/10 w-full max-w-md rounded-3xl shadow-2xl animate-in zoom-in-95 duration-200 p-6 sm:p-8 my-auto">
             <div className="flex items-center justify-between mb-8">
               <h3 className="text-xl font-bold text-white">
                 New {activeTab === 'PROJECTS' ? 'Project' : activeTab === 'CLIENTS' ? 'Client' : 'Employee'}
