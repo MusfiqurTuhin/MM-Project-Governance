@@ -21,7 +21,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [user, setUser] = useState<AuthUser | null>(() => {
     try {
       const stored = localStorage.getItem('mm_auth');
-      return stored ? JSON.parse(stored) : null;
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        api.defaults.headers.common['Authorization'] = `Bearer ${parsed.token}`;
+        return parsed;
+      }
+      return null;
     } catch { return null; }
   });
 
