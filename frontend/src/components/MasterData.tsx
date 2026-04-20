@@ -251,10 +251,10 @@ const MasterData: React.FC = () => {
                       onChange={(e) => setFormData({...formData, name: e.target.value})}
                     />
                   </div>
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div className="space-y-2">
                       <label className="text-xs font-semibold text-slate-500 uppercase tracking-widest px-1">Client</label>
-                      <select 
+                      <select
                         required
                         className="w-full bg-slate-950 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
                         value={formData.client_id || ''}
@@ -266,7 +266,7 @@ const MasterData: React.FC = () => {
                     </div>
                     <div className="space-y-2">
                       <label className="text-xs font-semibold text-slate-500 uppercase tracking-widest px-1">Manager</label>
-                      <select 
+                      <select
                         required
                         className="w-full bg-slate-950 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
                         value={formData.manager_id || ''}
@@ -277,12 +277,12 @@ const MasterData: React.FC = () => {
                       </select>
                     </div>
                   </div>
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div className="space-y-2">
                       <label className="text-xs font-semibold text-slate-500 uppercase tracking-widest px-1">Start Date</label>
-                      <input 
+                      <input
                         required
-                        type="date" 
+                        type="date"
                         className="w-full bg-slate-950 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all"
                         value={formData.start_date || ''}
                         onChange={(e) => setFormData({...formData, start_date: e.target.value})}
@@ -290,21 +290,21 @@ const MasterData: React.FC = () => {
                     </div>
                     <div className="space-y-2">
                       <label className="text-xs font-semibold text-slate-500 uppercase tracking-widest px-1">Deadline</label>
-                      <input 
+                      <input
                         required
-                        type="date" 
+                        type="date"
                         className="w-full bg-slate-950 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all"
                         value={formData.original_deadline || ''}
                         onChange={(e) => setFormData({...formData, original_deadline: e.target.value})}
                       />
                     </div>
                   </div>
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div className="space-y-2">
                       <label className="text-xs font-semibold text-slate-500 uppercase tracking-widest px-1">Budget</label>
-                      <input 
+                      <input
                         required
-                        type="number" 
+                        type="number"
                         className="w-full bg-slate-950 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all"
                         placeholder="0.00"
                         value={formData.budget || ''}
@@ -313,7 +313,7 @@ const MasterData: React.FC = () => {
                     </div>
                     <div className="space-y-2">
                        <label className="text-xs font-semibold text-slate-500 uppercase tracking-widest px-1">Currency</label>
-                       <select 
+                       <select
                          required
                          className="w-full bg-slate-950 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
                          value={formData.currency || 'USD'}
