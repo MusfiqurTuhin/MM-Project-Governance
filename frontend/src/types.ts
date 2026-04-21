@@ -1,7 +1,14 @@
+export interface POC {
+  name: string;
+  designation: string;
+  phone: string;
+  email: string;
+}
+
 export interface Client {
   id: number;
   name: string;
-  contact_email: string;
+  website: string;
 }
 
 export interface Employee {
@@ -19,6 +26,16 @@ export interface Project {
   currency: string;
   start_date: string;
   original_deadline: string;
+  pocs?: string; // JSON string of POC[]
+}
+
+export interface EditHistoryEntry {
+  id: number;
+  entity_type: string;
+  entity_id: number;
+  edited_by: string;
+  edited_at: string;
+  snapshot: string; // JSON string
 }
 
 export interface DashboardData {

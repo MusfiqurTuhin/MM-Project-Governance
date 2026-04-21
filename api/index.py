@@ -1,14 +1,15 @@
-import sys, os
+import sys, os, json
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from flask import Flask, request, jsonify, g
 from functools import wraps
 from datetime import date, timedelta
+from sqlalchemy import text
 
 from database import engine, SessionLocal, Base
 from models import (
     User, UserRole, Client, Employee, Project,
-    MeetingUpdate, Invoice, RAGStatus, BlockerType, InvoiceStatus,
+    MeetingUpdate, Invoice, RAGStatus, BlockerType, InvoiceStatus, EditHistory,
 )
 from auth import (
     hash_password, verify_password, create_access_token,
@@ -18,8 +19,24 @@ from auth import (
 app = Flask(__name__)
 
 
+def migrate_db():
+    """Apply schema changes that create_all won't handle on existing tables."""
+    with engine.connect() as conn:
+        for sql in [
+            "ALTER TABLE client RENAME COLUMN contact_email TO website",
+            "ALTER TABLE client ADD COLUMN IF NOT EXISTS website VARCHAR DEFAULT ''",
+            "ALTER TABLE project ADD COLUMN IF NOT EXISTS pocs TEXT DEFAULT '[]'",
+        ]:
+            try:
+                conn.execute(text(sql))
+                conn.commit()
+            except Exception:
+                pass
+
+
 def init_db():
     Base.metadata.create_all(engine)
+    migrate_db()
     with SessionLocal() as s:
         seed_default_users(s)
 
@@ -82,6 +99,15 @@ def row_to_dict(obj, exclude=None):
     return d
 
 
+def log_edit(db, entity_type: str, entity_id: int, snapshot: dict):
+    db.add(EditHistory(
+        entity_type=entity_type,
+        entity_id=entity_id,
+        edited_by=g.current_user.username,
+        snapshot=json.dumps(snapshot, default=str),
+    ))
+
+
 # ── auth ─────────────────────────────────────────────────────────────────────
 
 @app.post("/api/v1/auth/login")
@@ -110,8 +136,7 @@ def get_me():
 @require_super_admin
 def list_users():
     db = get_db()
-    users = db.query(User).all()
-    return jsonify([row_to_dict(u, exclude=["hashed_password"]) for u in users])
+    return jsonify([row_to_dict(u, exclude=["hashed_password"]) for u in db.query(User).all()])
 
 
 @app.post("/api/v1/users")
@@ -141,7 +166,7 @@ def delete_user(user_id):
     return jsonify({"ok": True})
 
 
-# ── read endpoints ────────────────────────────────────────────────────────────
+# ── read ──────────────────────────────────────────────────────────────────────
 
 @app.get("/api/v1/projects")
 @require_auth
@@ -175,6 +200,17 @@ def get_updates():
         d["owner_name"] = owner.name if owner else "Unknown"
         result.append(d)
     return jsonify(result)
+
+
+@app.get("/api/v1/history/<entity_type>/<int:entity_id>")
+@require_auth
+def get_history(entity_type, entity_id):
+    db = get_db()
+    rows = (db.query(EditHistory)
+            .filter_by(entity_type=entity_type, entity_id=entity_id)
+            .order_by(EditHistory.edited_at.desc(), EditHistory.id.desc())
+            .all())
+    return jsonify([row_to_dict(h) for h in rows])
 
 
 @app.get("/api/v1/dashboard")
@@ -237,17 +273,20 @@ def get_dashboard():
     })
 
 
-# ── write endpoints ───────────────────────────────────────────────────────────
+# ── create ────────────────────────────────────────────────────────────────────
 
 @app.post("/api/v1/projects")
 @require_auth
 def create_project():
     db = get_db()
     b = request.json or {}
-    p = Project(name=b["name"], client_id=b["client_id"], manager_id=b["manager_id"],
-                budget=b["budget"], currency=b.get("currency", "USD"),
-                start_date=date.fromisoformat(b["start_date"]),
-                original_deadline=date.fromisoformat(b["original_deadline"]))
+    p = Project(
+        name=b["name"], client_id=b["client_id"], manager_id=b["manager_id"],
+        budget=b["budget"], currency=b.get("currency", "USD"),
+        start_date=date.fromisoformat(b["start_date"]),
+        original_deadline=date.fromisoformat(b["original_deadline"]),
+        pocs=json.dumps(b.get("pocs", [])),
+    )
     db.add(p); db.commit(); db.refresh(p)
     return jsonify(row_to_dict(p)), 201
 
@@ -257,7 +296,7 @@ def create_project():
 def create_client():
     db = get_db()
     b = request.json or {}
-    c = Client(name=b["name"], contact_email=b["contact_email"])
+    c = Client(name=b["name"], website=b.get("website", ""))
     db.add(c); db.commit(); db.refresh(c)
     return jsonify(row_to_dict(c)), 201
 
@@ -292,7 +331,63 @@ def create_update():
     return jsonify(row_to_dict(u)), 201
 
 
-# ── delete endpoints ──────────────────────────────────────────────────────────
+# ── edit ──────────────────────────────────────────────────────────────────────
+
+@app.put("/api/v1/projects/<int:pid>")
+@require_auth
+def update_project(pid):
+    db = get_db()
+    p = db.get(Project, pid)
+    if not p:
+        return jsonify({"detail": "Not found"}), 404
+    b = request.json or {}
+    p.name = b.get("name", p.name)
+    p.client_id = b.get("client_id", p.client_id)
+    p.manager_id = b.get("manager_id", p.manager_id)
+    p.budget = b.get("budget", p.budget)
+    p.currency = b.get("currency", p.currency)
+    if "start_date" in b:
+        p.start_date = date.fromisoformat(b["start_date"])
+    if "original_deadline" in b:
+        p.original_deadline = date.fromisoformat(b["original_deadline"])
+    if "pocs" in b:
+        p.pocs = json.dumps(b["pocs"])
+    log_edit(db, "project", pid, row_to_dict(p))
+    db.commit(); db.refresh(p)
+    return jsonify(row_to_dict(p))
+
+
+@app.put("/api/v1/clients/<int:cid>")
+@require_auth
+def update_client(cid):
+    db = get_db()
+    c = db.get(Client, cid)
+    if not c:
+        return jsonify({"detail": "Not found"}), 404
+    b = request.json or {}
+    c.name = b.get("name", c.name)
+    c.website = b.get("website", c.website)
+    log_edit(db, "client", cid, row_to_dict(c))
+    db.commit(); db.refresh(c)
+    return jsonify(row_to_dict(c))
+
+
+@app.put("/api/v1/employees/<int:eid>")
+@require_auth
+def update_employee(eid):
+    db = get_db()
+    e = db.get(Employee, eid)
+    if not e:
+        return jsonify({"detail": "Not found"}), 404
+    b = request.json or {}
+    e.name = b.get("name", e.name)
+    e.roles = b.get("roles", e.roles)
+    log_edit(db, "employee", eid, row_to_dict(e))
+    db.commit(); db.refresh(e)
+    return jsonify(row_to_dict(e))
+
+
+# ── delete ────────────────────────────────────────────────────────────────────
 
 @app.delete("/api/v1/projects/<int:pid>")
 @require_super_admin

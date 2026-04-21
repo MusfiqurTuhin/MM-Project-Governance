@@ -43,7 +43,7 @@ class Client(Base):
     __tablename__ = "client"
     id = Column(Integer, primary_key=True)
     name = Column(String, nullable=False)
-    contact_email = Column(String, nullable=False)
+    website = Column(String, nullable=False, default="")
 
 
 class Employee(Base):
@@ -63,6 +63,7 @@ class Project(Base):
     currency = Column(String, default="USD")
     start_date = Column(Date, nullable=False)
     original_deadline = Column(Date, nullable=False)
+    pocs = Column(String, default="[]")  # JSON array: [{name,designation,phone,email}]
 
 
 class MeetingUpdate(Base):
@@ -85,3 +86,13 @@ class Invoice(Base):
     amount = Column(Float, nullable=False)
     status = Column(Enum(InvoiceStatus), nullable=False)
     due_date = Column(Date, nullable=False)
+
+
+class EditHistory(Base):
+    __tablename__ = "edithistory"
+    id = Column(Integer, primary_key=True)
+    entity_type = Column(String, nullable=False)   # 'project' | 'client' | 'employee'
+    entity_id = Column(Integer, nullable=False)
+    edited_by = Column(String, nullable=False)
+    edited_at = Column(Date, default=date.today, nullable=False)
+    snapshot = Column(String, nullable=False)       # JSON of the record after edit
