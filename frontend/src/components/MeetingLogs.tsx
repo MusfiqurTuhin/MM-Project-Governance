@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { History, Calendar, User, AlertCircle, CreditCard, CheckCircle2, EyeOff, SlidersHorizontal } from 'lucide-react';
-import { getUpdates } from '../api';
+import { History, Calendar, User, AlertCircle, CreditCard, CheckCircle2, EyeOff, SlidersHorizontal, Trash2 } from 'lucide-react';
+import { getUpdates, deleteUpdate } from '../api';
 import Panel from './ui/Panel';
 import Badge from './ui/Badge';
+import { useAuth } from '../context/AuthContext';
 
 const fDate = (d?: string) => {
   if (!d) return '—';
@@ -29,6 +30,7 @@ const RAG_CHIP: Record<RagFilter, string> = {
 };
 
 const MeetingLogs: React.FC = () => {
+  const { isSuperAdmin } = useAuth();
   const [updates, setUpdates]     = useState<any[]>([]);
   const [loading, setLoading]     = useState(true);
   const [ragFilter, setRagFilter] = useState<RagFilter>('All');
@@ -40,12 +42,22 @@ const MeetingLogs: React.FC = () => {
     } catch { return new Set(); }
   });
 
-  useEffect(() => {
+  const loadUpdates = () => {
     getUpdates()
       .then(res => setUpdates(res.data))
       .catch(err => console.error('Failed to fetch updates', err))
       .finally(() => setLoading(false));
-  }, []);
+  };
+
+  useEffect(() => { loadUpdates(); }, []);
+
+  const handleDelete = async (id: number) => {
+    if (!confirm('Delete this update record? This cannot be undone.')) return;
+    try {
+      await deleteUpdate(id);
+      loadUpdates();
+    } catch (err) { console.error('Delete failed', err); }
+  };
 
   const toggleDone = (id: number) => {
     setDoneIds(prev => {
@@ -193,6 +205,14 @@ const MeetingLogs: React.FC = () => {
                           className="text-[10px] text-slate-600 hover:text-slate-400 font-medium transition-colors"
                         >
                           Undo
+                        </button>
+                      )}
+                      {isSuperAdmin && (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); handleDelete(update.id); }}
+                          className="ml-auto flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-bold border border-transparent text-slate-600 hover:text-rose-400 hover:bg-rose-500/10 hover:border-rose-500/20 transition-all"
+                        >
+                          <Trash2 size={11} /> Delete
                         </button>
                       )}
                     </div>

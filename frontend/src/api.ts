@@ -34,7 +34,8 @@ export const deleteProject  = (id: number) => api.delete(`/projects/${id}`);
 export const deleteClient   = (id: number) => api.delete(`/clients/${id}`);
 export const deleteEmployee = (id: number) => api.delete(`/employees/${id}`);
 
-export const createUpdate = (data: any) => api.post('/updates', data);
+export const createUpdate  = (data: any) => api.post('/updates', data);
+export const deleteUpdate  = (id: number) => api.delete(`/updates/${id}`);
 export const getUpdates   = () => api.get<any[]>('/updates');
 export const getDashboard = () => api.get<DashboardData>('/dashboard');
 

@@ -389,6 +389,17 @@ def update_employee(eid):
 
 # ── delete ────────────────────────────────────────────────────────────────────
 
+@app.delete("/api/v1/updates/<int:uid>")
+@require_super_admin
+def delete_update(uid):
+    db = get_db()
+    obj = db.get(MeetingUpdate, uid)
+    if not obj:
+        return jsonify({"detail": "Not found"}), 404
+    db.delete(obj); db.commit()
+    return jsonify({"ok": True})
+
+
 @app.delete("/api/v1/projects/<int:pid>")
 @require_super_admin
 def delete_project(pid):
