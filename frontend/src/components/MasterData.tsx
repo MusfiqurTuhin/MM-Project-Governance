@@ -173,7 +173,11 @@ const MasterData: React.FC = () => {
     setIsEditing(true);
     if (activeTab === 'PROJECTS') {
       const p = item as Project;
-      setFormData({ ...p, pocs: parsePOCs(p.pocs) });
+      setFormData({
+        id: p.id, name: p.name, client_id: p.client_id, manager_id: p.manager_id,
+        budget: p.budget, currency: p.currency, start_date: p.start_date,
+        original_deadline: p.original_deadline, pocs: parsePOCs(p.pocs),
+      });
     } else {
       setFormData({ ...item });
     }
