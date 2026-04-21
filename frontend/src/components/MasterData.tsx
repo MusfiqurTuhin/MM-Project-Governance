@@ -178,8 +178,12 @@ const MasterData: React.FC = () => {
         budget: p.budget, currency: p.currency, start_date: p.start_date,
         original_deadline: p.original_deadline, pocs: parsePOCs(p.pocs),
       });
+    } else if (activeTab === 'CLIENTS') {
+      const c = item as Client;
+      setFormData({ id: c.id, name: c.name, website: c.website });
     } else {
-      setFormData({ ...item });
+      const em = item as Employee;
+      setFormData({ id: em.id, name: em.name, roles: em.roles });
     }
     setShowModal(true);
   };
