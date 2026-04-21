@@ -1107,7 +1107,7 @@ const FinanceTab = ({
 // Admin Tab
 // ═══════════════════════════════════════════════════════════════════════════
 
-const AdminTab = ({ data, onLogUpdate }: { data: DashboardData; onLogUpdate?: () => void }) => {
+const AdminTab = ({ data, onLogUpdate }: { data: DashboardData; onLogUpdate?: (projectName?: string) => void }) => {
   const [blockerFilter, setBlockerFilter] = useState<string>('All');
   const [selected, setSelected] = useState<DashboardData['needed_actions'][0] | null>(null);
   const blockerTypes = ['All', ...Array.from(new Set(data.needed_actions.map(a => a.blocker)))];
@@ -1137,7 +1137,7 @@ const AdminTab = ({ data, onLogUpdate }: { data: DashboardData; onLogUpdate?: ()
               </div>
               <div className="flex items-center gap-3 pt-1 border-t border-white/[0.05]">
                 <button
-                  onClick={() => { setSelected(null); onLogUpdate?.(); }}
+                  onClick={() => { setSelected(null); onLogUpdate?.(selected?.project); }}
                   className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-indigo-500/15 border border-indigo-500/25 text-indigo-300 text-xs font-bold hover:bg-indigo-500/20 transition-colors"
                 >
                   <FileEdit size={13} /> Log Update
@@ -1379,7 +1379,7 @@ const ActionsModal = ({
 // Main Dashboard
 // ═══════════════════════════════════════════════════════════════════════════
 
-const Dashboard = ({ onNavigate }: { onNavigate?: (page: string) => void }) => {
+const Dashboard = ({ onNavigate }: { onNavigate?: (page: string, projectId?: number) => void }) => {
   const [data, setData]               = useState<DashboardData | null>(null);
   const [loading, setLoading]         = useState(true);
   const [refreshing, setRefreshing]   = useState(false);
@@ -1450,7 +1450,7 @@ const Dashboard = ({ onNavigate }: { onNavigate?: (page: string) => void }) => {
       const match = data?.needed_actions.find(a => a.project === p.name);
       setViewProject({ ...p, notes: match?.notes, blocker: match?.blocker });
     } else if (action === 'escalate') {
-      onNavigate?.('INPUT');
+      onNavigate?.('INPUT', p.project_id);
     } else {
       setActionsProject(p);
     }
@@ -1489,14 +1489,14 @@ const Dashboard = ({ onNavigate }: { onNavigate?: (page: string) => void }) => {
         <ProjectDetailModal
           project={viewProject}
           onClose={() => setViewProject(null)}
-          onLogUpdate={() => { setViewProject(null); onNavigate?.('INPUT'); }}
+          onLogUpdate={() => { setViewProject(null); onNavigate?.('INPUT', viewProject?.project_id); }}
         />
       )}
       {actionsProject && (
         <ActionsModal
           project={actionsProject}
           onClose={() => setActionsProject(null)}
-          onLogUpdate={() => { setActionsProject(null); onNavigate?.('INPUT'); }}
+          onLogUpdate={() => { setActionsProject(null); onNavigate?.('INPUT', actionsProject?.project_id); }}
           onViewFinance={() => { setActionsProject(null); setActiveTab('finance'); }}
         />
       )}
@@ -1644,7 +1644,10 @@ const Dashboard = ({ onNavigate }: { onNavigate?: (page: string) => void }) => {
             )}
             {activeTab === 'resources' && <ResourcesTab data={data} onMemberClick={setSelectedMember} />}
             {activeTab === 'finance'   && <FinanceTab   data={data} currency={currency} onCurrency={setCurrency} />}
-            {activeTab === 'admin'     && <AdminTab     data={data} />}
+            {activeTab === 'admin'     && <AdminTab     data={data} onLogUpdate={(projectName) => {
+              const proj = updates.find(u => u.project_name === projectName);
+              onNavigate?.('INPUT', proj?.project_id);
+            }} />}
           </div>
         </div>
 

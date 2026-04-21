@@ -5,7 +5,7 @@ import { AlertCircle, CheckCircle, Send, Briefcase, User as UserIcon, Calendar, 
 import Panel from './ui/Panel';
 import Button from './ui/Button';
 
-const MeetingForm = () => {
+const MeetingForm = ({ preselectedProjectId }: { preselectedProjectId?: number | null }) => {
   const [projects, setProjects] = useState<Project[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [loading, setLoading] = useState(false);
@@ -25,6 +25,12 @@ const MeetingForm = () => {
     getProjects().then(res => setProjects(res.data));
     getEmployees().then(res => setEmployees(res.data));
   }, []);
+
+  useEffect(() => {
+    if (preselectedProjectId) {
+      setFormData(f => ({ ...f, project_id: String(preselectedProjectId) }));
+    }
+  }, [preselectedProjectId]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

@@ -29,6 +29,7 @@ function AppShell() {
   const { theme, toggleTheme } = useTheme();
   const [mode, setMode] = useState<Mode>('CXO');
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [preselectedProjectId, setPreselectedProjectId] = useState<number | null>(null);
 
   if (!user) return <LoginPage />;
 
@@ -226,8 +227,8 @@ function AppShell() {
 
         <div className="flex-1 p-4 lg:p-8 max-w-[1400px] mx-auto w-full">
           <div className="animate-in fade-in slide-in-from-bottom-3 duration-400">
-            {mode === 'INPUT'       && <MeetingForm />}
-            {mode === 'CXO'         && <Dashboard onNavigate={(page) => setMode(page as Mode)} />}
+            {mode === 'INPUT'       && <MeetingForm preselectedProjectId={preselectedProjectId} />}
+            {mode === 'CXO'         && <Dashboard onNavigate={(page, projectId) => { setMode(page as Mode); setPreselectedProjectId(projectId ?? null); }} />}
             {mode === 'LOGS'        && <MeetingLogs />}
             {mode === 'MASTER_DATA' && <MasterData />}
           </div>
