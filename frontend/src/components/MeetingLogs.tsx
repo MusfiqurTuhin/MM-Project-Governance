@@ -29,6 +29,8 @@ const RAG_CHIP: Record<RagFilter, string> = {
   GREEN: 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300',
 };
 
+const CURR_SYMBOLS: Record<string, string> = { USD: '$', BDT: '৳', EUR: '€', GBP: '£' };
+
 const MeetingLogs: React.FC = () => {
   const { isSuperAdmin } = useAuth();
   const [updates, setUpdates]     = useState<any[]>([]);
@@ -182,7 +184,7 @@ const MeetingLogs: React.FC = () => {
                       </div>
                       <div className="flex items-center gap-2 text-sm text-slate-400">
                         <CreditCard size={14} className="text-emerald-400" />
-                        <span>Target: <span className="text-emerald-400 font-mono font-bold">${update.next_invoice_amount?.toLocaleString()}</span></span>
+                        <span>Target: <span className="text-emerald-400 font-mono font-bold">{CURR_SYMBOLS[update.project_currency] || '$'}{update.next_invoice_amount?.toLocaleString()}</span></span>
                       </div>
                     </div>
 

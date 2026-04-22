@@ -137,6 +137,7 @@ def get_updates(session: Session = Depends(get_session)):
         result.append({
             **u.model_dump(),
             "project_name": project.name if project else "Unknown",
+            "project_currency": project.currency if project and project.currency else "USD",
             "owner_name": owner.name if owner else "Unknown",
         })
     return result
